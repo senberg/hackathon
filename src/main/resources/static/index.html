@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Total Investment Returns</title>
+    <link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32x32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="/icons/favicon-16x16.png">
+    <link rel="manifest" href="/site.webmanifest">
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
+    <script type="text/javascript" src="https://www.gstatic.com/charts/loader.js"></script>
+    <style>
+        body{
+            background-color:white;
+            text-align: center;
+            font-family: Arial,sans-serif;
+            font-size: 24px;
+            padding: 0;
+            margin: 0;
+        }
+        h1, h3{
+            margin: 0;
+        }
+        button {
+            background-color: #009879;
+            border: none;
+            color: white;
+            padding: 15px 32px;
+            text-align: center;
+            text-decoration: none;
+            display: inline-block;
+            font-size: 16px;
+            margin: 4px 2px;
+            cursor: pointer;
+        }
+        p {
+            font-size: 18px;
+            text-align: left;
+        }
+        section{
+            display: flex;
+            justify-content: center;
+            margin:10px;
+        }
+        #content{
+            padding: 12px;
+            display: inline-block;
+        }
+        table{
+            width:950px;
+            display: none;
+            border-collapse: collapse;
+            margin: 25px 0;
+            font-size: 0.9em;
+            font-family: sans-serif;
+            min-width: 400px;
+            box-shadow: 0 0 20px rgba(0, 0, 0, 0.15);
+        }
+        thead tr {
+            background-color: #009879;
+            color: #ffffff;
+        }
+        th, td {
+            padding: 12px 15px;
+            text-align: left;
+            min-width: 115px;
+        }
+        tbody tr {
+            border-bottom: 1px solid #dddddd;
+        }
+        tbody tr:nth-of-type(even) {
+            background-color: #f3f3f3;
+        }
+        tbody tr:last-of-type {
+            border-bottom: 2px solid #009879;
+        }
+        tbody tr:hover {
+            background-color: #baeada;
+            color: #0f4a3e;
+        }
+    </style>
+</head>
+<body id="body">
+    <section>
+        <div id="content">
+            <h3>Total Investment Returns</h3>
+            <h1 id="selectedHeading">Loading ...</h1>
+            <div id="stockButtons"></div>
+            <p id="explanation"></p>
+            <div id="chart"></div>
+            <table id="eventTable">
+                <thead>
+                    <th>Date</th>
+                    <th>Event</th>
+                </thead>
+                <tbody id="eventBody"></tbody>
+            </table>
+        </div>
+    </section>
+    <script type="text/javascript">
+        // Load the Visualization API and the corechart package.
+        google.charts.load('current', {'packages':['corechart', 'line']});
+        google.charts.setOnLoadCallback(prepare);
+
+        var stocks;
+        var stockData = {};
+        var options;
+        var chart;
+        var heading = document.getElementById("selectedHeading");
+        var explanation = document.getElementById("explanation");
+        var eventTable = document.getElementById("eventTable");
+        var eventBody = document.getElementById("eventBody");
+
+        function prepare(){
+            chart = new google.visualization.LineChart(document.getElementById("chart"));
+            options = {
+                hAxis: {
+                    title: 'Date',
+                    textStyle: {
+                        color: '#1a237e',
+                        fontSize: 18,
+                        bold: true,
+                    },
+                    titleTextStyle: {
+                        color: '#1a237e',
+                        fontSize: 24,
+                        bold: true,
+                    }
+                },
+                vAxis: {
+                    title: 'Price / Total Return',
+                    textStyle: {
+                        color: '#1a237e',
+                        fontSize: 18,
+                        bold: true
+                    },
+                    titleTextStyle: {
+                        color: '#1a237e',
+                        fontSize: 24,
+                        bold: true
+                    }
+                },
+                width: 950,
+                height: 768,
+                chartArea: { width:"75%", height:"75%"},
+                colors: ['#a52714', '#097138']
+            };
+
+            $.get('/getStocks', function(data) {
+                stocks = data;
+                var stockButtons = document.getElementById("stockButtons");
+
+                for(const name of stocks){
+                    var button = document.createElement("button");
+                    button.innerHTML = name;
+                    button.onclick = function () {
+                        display(name);
+                    };
+                    stockButtons.appendChild(button);
+                }
+
+                display(stocks[0]);
+            })
+        }
+
+        function display(name){
+            eventTable.style.display = "none";
+            eventBody.innerHTML = "";
+
+            if(stockData[name] == null){
+                heading.innerText = "Loading ...";
+
+                $.get('/getStockData', 'name=' + name, function(response) {
+                    var dataTable = new google.visualization.DataTable();
+                    dataTable.addColumn('date', 'Date');
+                    dataTable.addColumn('number', 'Price');
+                    dataTable.addColumn('number', 'Total Return');
+                    dataTable.addRows(response.data.length);
+                    var index = 0;
+
+                    for(const row of response.data){
+                        var date = new Date(row[0]);
+                        dataTable.setValue(index, 0, date);
+                        dataTable.setValue(index, 1, row[1]);
+                        dataTable.setValue(index, 2, row[2]);
+                        index++;
+                    }
+
+                    stockData[name] = { data : dataTable, events : response.events, stats : response.stats };
+                    render(name);
+                });
+            } else {
+                render(name);
+            }
+        }
+
+        function render(name){
+            heading.innerText = name;
+            chart.draw(stockData[name].data, options);
+            displayEvents(name);
+            var stats = stockData[name].stats;
+            explanation.innerHTML = "At the start of this period one stock was worth <b>" + stats.initialClosingPrice + " " + stats.currency + "</b> and at the end of the period one stock was worth <b>" + stats.lastClosingPrice + " " + stats.currency + "</b>.";
+            explanation.innerHTML += "<br>This would have naively have indicated a annualized return of <b>" + stats.priceAnnualizedReturn + "%</b>.";
+            explanation.innerHTML += "<br>Including reinvested dividends of cash and stocks, splits and other events the real return would have been much better."
+            explanation.innerHTML += "<br>If you invested <b>" + stats.initialClosingPrice + " " + stats.currency + "</b> you would have had a total return of <b>" + stats.lastTotalReturn + " " + stats.currency + "</b>."
+            explanation.innerHTML += "<br>This gives a real annualized return of <b>" + stats.totalAnnualizedReturn + "%</b>.";
+        }
+
+        Date.prototype.formatYYYYMMDD = function(){
+            return this.getFullYear() + "-" + zeroFill(this.getDate(), 2) + "-" + zeroFill(this.getMonth(), 2);
+        }
+
+        function displayEvents(name){
+            for(const event of stockData[name].events){
+                var tr = document.createElement("tr");
+                var dateTd = document.createElement("td");
+                dateTd.innerText = new Date(event[0]).formatYYYYMMDD();
+                tr.appendChild(dateTd);
+                var descriptionTd = document.createElement("td");
+                descriptionTd.innerText = event[1];
+                tr.appendChild(descriptionTd);
+                eventBody.appendChild(tr);
+            }
+
+            eventTable.style.display = "table";
+        }
+
+        function zeroFill( number, width )
+        {
+            width -= number.toString().length;
+            if ( width > 0 )
+            {
+                return new Array( width + (/\./.test( number ) ? 2 : 1) ).join( '0' ) + number;
+            }
+            return number + ""; // always return a string
+        }
+    </script>
+</body>
+</html>
